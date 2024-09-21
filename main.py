@@ -50,7 +50,7 @@ def send_welcome(message):
 
     if user_role == 'subscriber':
         bell_button = KeyboardButton("Bell")
-        telsus_button = KeyboardButton("Telsus")
+        telsus_button = KeyboardButton("Telus")
         rogers_button = KeyboardButton("Rogers")
         markup.add(bell_button, telsus_button, rogers_button)
     elif user_role in ['admin', 'super_admin']:
@@ -194,7 +194,7 @@ def see_users(message):
 def upload_leads(message):
     markup = ReplyKeyboardMarkup(row_width=3, resize_keyboard=True)
     bell_button = KeyboardButton("Bell")
-    telsus_button = KeyboardButton("Telsus")
+    telsus_button = KeyboardButton("Telus")
     rogers_button = KeyboardButton("Rogers")
     markup.add(bell_button, telsus_button, rogers_button)
     
@@ -204,15 +204,15 @@ def upload_leads(message):
     bot.send_message(message.chat.id, "Please select a carrier to upload leads:", reply_markup=markup)
 
 
-@bot.message_handler(func=lambda message: message.text in ['Bell', 'Telsus', 'Rogers'])
+@bot.message_handler(func=lambda message: message.text in ['Bell', 'Telus', 'Rogers'])
 def handle_carrier_selection(message):
     carrier = message.text.lower()
     markup = ReplyKeyboardMarkup(row_width=3, resize_keyboard=True)
     
     if carrier == "bell":
         markup.add(KeyboardButton("Bell BC"), KeyboardButton("Bell Ontario"), KeyboardButton("Bell Alberta"))
-    elif carrier == "telsus":
-        markup.add(KeyboardButton("Telsus BC"), KeyboardButton("Telsus Ontario"), KeyboardButton("Telsus Alberta"))
+    elif carrier == "Telus":
+        markup.add(KeyboardButton("Telus BC"), KeyboardButton("Telus Ontario"), KeyboardButton("Telus Alberta"))
     elif carrier == "rogers":
         markup.add(KeyboardButton("Rogers BC"), KeyboardButton("Rogers Ontario"), KeyboardButton("Rogers Alberta"))
     
@@ -225,7 +225,7 @@ def handle_carrier_selection(message):
 user_selected_carriers = {}
 
 @bot.message_handler(func=lambda message: message.text in ['Bell BC', 'Bell Ontario', 'Bell Alberta', 
-                                                           'Telsus BC', 'Telsus Ontario', 'Telsus Alberta',
+                                                           'Telus BC', 'Telus Ontario', 'Telus Alberta',
                                                            'Rogers BC', 'Rogers Ontario', 'Rogers Alberta'])
 def handle_location_selection(message):
     location = message.text.lower().replace(' ', '_')

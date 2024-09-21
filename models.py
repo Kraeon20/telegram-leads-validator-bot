@@ -1,21 +1,23 @@
 from pymongo import MongoClient
+import os
 import certifi
 from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
-MONGO_URI = 'mongodb+srv://williams:Priscilla2058@foxscraper.gqqxf.mongodb.net/?retryWrites=true&w=majority&appName=foxscraper'
-SUPER_ADMIN_ID = 6376544784
+MONGO_URI = os.environ.get('MONGO_URI')
+SUPER_ADMIN_ID = int(os.getenv('SUPER_ADMIN'))
+
+print(MONGO_URI)
+print("SUPER_ADMIN_ID:", SUPER_ADMIN_ID)
 
 client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
 db = client['leads_bot']
 
-# Collections
 admins = db['admins']
 subscribers = db['subscribers']
 payments = db['payments']
-
 
 
 carrier_collections = {
@@ -41,14 +43,12 @@ def add_admin(admin_id, username, full_name, added_by):
         "added_by": added_by
     })
 
+
 def delete_admin(admin_id):
-    # Check if the admin exists
     admin = admins.find_one({"admin_id": admin_id})
     if admin:
-        # Remove the admin from the admins collection
         admins.delete_one({"admin_id": admin_id})
         
-        # Update the subscriber's role to remove admin privileges
         subscribers.update_one({"subscriber_id": admin_id}, {"$set": {"role": "subscriber"}})
 
         
@@ -102,4 +102,24 @@ def update_payment_status(user_id, status):
 def check_payment_status(user_id):
     payment = payments.find_one({'user_id': user_id, 'status': 'completed'})
     return payment is not None
+
+
+def check_and_update_payment_status(payment_id, api_key):
+    payment_info = check_payment_status(payment_id, api_key)
+    if payment_info:
+        update_payment_status(payment_id, payment_info)
+
+
+def update_payment_status(payment_id, payment_info):
+    payment_status = payment_info.get("payment_status")
+    user_id = payment_info.get("purchase_id") 
+
+    if payment_status:
+        print(f"Payment ID: {payment_id}, Status: {payment_status}")
+        # Update the payment status in the database
+        update_payment_status(user_id, payment_status)
+    else:
+        print(f"Failed to retrieve status for payment ID: {payment_id}")
+
+
 

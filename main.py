@@ -2,12 +2,18 @@ import telebot
 import os
 import re
 import time
+import schedule
 from dotenv import load_dotenv
 from models import subscribers
 from api_payment import create_invoice
 from datetime import datetime, timezone
-from models import SUPER_ADMIN_ID, db, admins,add_subscribers, add_admin, get_all_admins, delete_admin , save_payment
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from models import (SUPER_ADMIN_ID, db, admins, 
+                    add_admin, add_subscribers, 
+                    get_all_admins, 
+                    delete_admin, save_payment, 
+                    check_payment_status, 
+                    check_and_update_payment_status)
 
 
 load_dotenv()
@@ -26,13 +32,10 @@ def get_user_role(user_id):
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    # Update or check the user's role in the database
     user_role = get_user_role(message.chat.id)
 
-    # Check if the user is already a subscriber
     user = subscribers.find_one({'subscriber_id': message.chat.id})
     if not user:
-        # Add the user as a subscriber
         add_subscribers(
             subscriber_id=message.chat.id,
             username=message.from_user.username,
@@ -237,7 +240,7 @@ def handle_location_selection(message):
         if user and user.get('role') in ['admin', 'super_admin']:
             bot.send_message(message.chat.id, f"Upload file for {message.text}:")
         else:
-            markup = InlineKeyboardMarkup()
+            markup = InlineKeyboardMarkup(row_width=2)
             markup.add(InlineKeyboardButton("10k - $20 USD", callback_data=f"{location}_10k"),
                        InlineKeyboardButton("20k - $35 USD", callback_data=f"{location}_20k"),
                        InlineKeyboardButton("Custom Order (50k+)", callback_data=f"{location}_custom"))
@@ -248,15 +251,15 @@ def handle_location_selection(message):
 @bot.callback_query_handler(func=lambda call: call.data.endswith('10k') or call.data.endswith('20k'))
 def handle_quantity_selection(call):
     if call.data.endswith('10k'):
-        amount = 20
+        amount = 1
     elif call.data.endswith('20k'):
-        amount = 35
+        amount = 2
 
     description = f"Purchase {call.data.replace('_', ' ')}"
     invoice_url = create_invoice(price_amount=amount, price_currency="usd", order_description=description)
 
     if invoice_url:
-        save_payment(call.message.chat.id, amount, 'pending')  # Save payment with 'pending' status
+        save_payment(call.message.chat.id, amount, 'pending')
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("Complete Payment", url=invoice_url))
         bot.send_message(call.message.chat.id, "Click the button below to complete your payment:", reply_markup=markup)
@@ -276,7 +279,6 @@ def handle_custom_order(call):
 def handle_file_upload(message):
     user_role = get_user_role(message.chat.id)
     
-    # Only allow admins or super admins to upload leads
     if user_role in ['admin', 'super_admin']:
         document = message.document
         file_name = document.file_name
@@ -285,10 +287,8 @@ def handle_file_upload(message):
             file_info = bot.get_file(document.file_id)
             downloaded_file = bot.download_file(file_info.file_path)
             
-            # Decode file content (assuming UTF-8 encoding)
             file_content = downloaded_file.decode('utf-8')
             
-            # Pass the content to process and store numbers
             process_and_store_numbers(file_content, message.chat.id)
             
             bot.send_message(message.chat.id, "Phone numbers uploaded successfully!")
@@ -316,7 +316,6 @@ def process_and_store_numbers(file_content, user_id):
             valid_numbers.append(clean_number)
 
     if valid_numbers:
-        # Prepare bulk insert
         bulk_insert_data = [
             {
                 'phone_number': number,
@@ -337,10 +336,39 @@ def process_and_store_numbers(file_content, user_id):
         bot.send_message(user_id, "No valid phone numbers found in the file.")
 
 
+
+def deliver_leads(user_id, carrier, quantity):
+    # Retrieve leads from database
+    leads = db[carrier].find({'uploaded_by': user_id}).limit(quantity)
+    
+    # Create a text file with the leads
+    file_content = '\n'.join([lead['phone_number'] for lead in leads])
+    file_name = f"{carrier}_{quantity}.txt"
+    
+    # Send the file to the user
+    bot.send_document(user_id, file_name, file_content)
+
+
+def schedule_payment_status_check(payment_id, api_key, interval_minutes):
+    schedule.every(interval_minutes).minutes.do(check_and_update_payment_status, payment_id, api_key)
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+        
+        user_id = payment_id
+        payment_status = check_payment_status(user_id)
+        if payment_status:
+            user_data = subscribers.find_one({'subscriber_id': user_id})
+            carrier = user_data['carrier']
+            quantity = user_data['quantity']
+            
+            deliver_leads(user_id, carrier, quantity)
+
 if __name__=='__main__':
     while True:
         try:
-            bot.infinity_polling(non_stop=True, interval=0)
+            bot.infinity_polling(timeout=10, long_polling_timeout = 5)
         except Exception as e:
             print(e)
             time.sleep(5)

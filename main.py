@@ -251,9 +251,9 @@ def handle_location_selection(message):
 @bot.callback_query_handler(func=lambda call: call.data.endswith('10k') or call.data.endswith('20k'))
 def handle_quantity_selection(call):
     if call.data.endswith('10k'):
-        amount = 1
+        amount = 20
     elif call.data.endswith('20k'):
-        amount = 2
+        amount = 35
 
     description = f"Purchase {call.data.replace('_', ' ')}"
     invoice_url = create_invoice(price_amount=amount, price_currency="usd", order_description=description)

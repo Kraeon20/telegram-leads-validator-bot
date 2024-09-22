@@ -11,9 +11,7 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 from models import (SUPER_ADMIN_ID, db, admins, 
                     add_admin, add_subscribers, 
                     get_all_admins, 
-                    delete_admin, save_payment, 
-                    check_payment_status, 
-                    check_and_update_payment_status)
+                    delete_admin, save_payment, continuously_check_payment_status)
 
 
 load_dotenv()
@@ -50,9 +48,9 @@ def send_welcome(message):
 
     if user_role == 'subscriber':
         bell_button = KeyboardButton("Bell")
-        telsus_button = KeyboardButton("Telus")
+        telus_button = KeyboardButton("Telus")
         rogers_button = KeyboardButton("Rogers")
-        markup.add(bell_button, telsus_button, rogers_button)
+        markup.add(bell_button, telus_button, rogers_button)
     elif user_role in ['admin', 'super_admin']:
         markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
         see_users_button = KeyboardButton("See Subscribers") if user_role == 'super_admin' else None
@@ -73,7 +71,6 @@ def send_welcome(message):
 @bot.message_handler(func=lambda message: message.text == "Back")
 def back_to_main_menu(message):
     send_welcome(message)
-
     
 
 @bot.message_handler(func=lambda message: message.text == "Manage Admins" and get_user_role(message.chat.id) == 'super_admin')
@@ -89,11 +86,6 @@ def manage_admins(message):
     
     bot.send_message(message.chat.id, "Choose an admin management option:", reply_markup=markup)
 
-
-@bot.message_handler(func=lambda message: message.text == "Add Admin" and get_user_role(message.chat.id) == 'super_admin')
-def add_admin_handler(message):
-    bot.send_message(message.chat.id, "Please send the chat ID of the new admin or type 'Cancel' to go back.")
-    bot.register_next_step_handler(message, handle_new_admin_id)
 
 @bot.message_handler(func=lambda message: message.text == "Add Admin" and get_user_role(message.chat.id) == 'super_admin')
 def add_admin_handler(message):
@@ -194,9 +186,9 @@ def see_users(message):
 def upload_leads(message):
     markup = ReplyKeyboardMarkup(row_width=3, resize_keyboard=True)
     bell_button = KeyboardButton("Bell")
-    telsus_button = KeyboardButton("Telus")
+    telus_button = KeyboardButton("Telus")
     rogers_button = KeyboardButton("Rogers")
-    markup.add(bell_button, telsus_button, rogers_button)
+    markup.add(bell_button, telus_button, rogers_button)
     
     back_button = KeyboardButton("Back")
     markup.add(back_button)
@@ -211,7 +203,7 @@ def handle_carrier_selection(message):
     
     if carrier == "bell":
         markup.add(KeyboardButton("Bell BC"), KeyboardButton("Bell Ontario"), KeyboardButton("Bell Alberta"))
-    elif carrier == "Telus":
+    elif carrier == "telus":
         markup.add(KeyboardButton("Telus BC"), KeyboardButton("Telus Ontario"), KeyboardButton("Telus Alberta"))
     elif carrier == "rogers":
         markup.add(KeyboardButton("Rogers BC"), KeyboardButton("Rogers Ontario"), KeyboardButton("Rogers Alberta"))
@@ -221,9 +213,7 @@ def handle_carrier_selection(message):
     
     bot.send_message(message.chat.id, f"Please select a location for {message.text}:", reply_markup=markup)
 
-# A dictionary to store the selected carrier for each user
 user_selected_carriers = {}
-
 @bot.message_handler(func=lambda message: message.text in ['Bell BC', 'Bell Ontario', 'Bell Alberta', 
                                                            'Telus BC', 'Telus Ontario', 'Telus Alberta',
                                                            'Rogers BC', 'Rogers Ontario', 'Rogers Alberta'])
@@ -256,15 +246,35 @@ def handle_quantity_selection(call):
         amount = 35
 
     description = f"Purchase {call.data.replace('_', ' ')}"
-    invoice_url = create_invoice(price_amount=amount, price_currency="usd", order_description=description)
+    payment_id, invoice_url = create_invoice(price_amount=amount, price_currency="usd", order_description=description)
 
-    if invoice_url:
-        save_payment(call.message.chat.id, amount, 'pending')
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("Complete Payment", url=invoice_url))
-        bot.send_message(call.message.chat.id, "Click the button below to complete your payment:", reply_markup=markup)
+    # Get user details
+    user = subscribers.find_one({'subscriber_id': call.message.chat.id})
+    if user:
+        username = user.get('username', 'unknown')
+        full_name = user.get('full_name', 'unknown')
+        
+        if invoice_url:
+            save_payment(
+                user_id=call.message.chat.id,
+                username=username,
+                full_name=full_name,
+                amount=amount,
+                status="waiting",  
+                payment_id=payment_id,  # Use the payment ID from the API
+                order_description=description,
+                price_currency="usd",
+                pay_currency="usd"
+            )
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("Complete Payment", url=invoice_url))
+            bot.send_message(call.message.chat.id, "Click the button below to complete your payment:", reply_markup=markup)
+            continuously_check_payment_status(payment_id)  # Pass the payment ID to the function
+        else:
+            bot.send_message(call.message.chat.id, "Failed to create payment. Please try again later.")
     else:
-        bot.send_message(call.message.chat.id, "Failed to create payment. Please try again later.")
+        bot.send_message(call.message.chat.id, "User not found.")
+
 
 @bot.callback_query_handler(func=lambda call: 'custom' in call.data)
 def handle_custom_order(call):
@@ -326,7 +336,6 @@ def process_and_store_numbers(file_content, user_id):
             for number in valid_numbers
         ]
         
-        # Insert all valid numbers in one go
         if bulk_insert_data:
             db[carrier].insert_many(bulk_insert_data)
             bot.send_message(user_id, f"{len(valid_numbers)} valid phone numbers uploaded successfully to {carrier.replace('_', ' ').title()}.")
@@ -335,35 +344,6 @@ def process_and_store_numbers(file_content, user_id):
     else:
         bot.send_message(user_id, "No valid phone numbers found in the file.")
 
-
-
-def deliver_leads(user_id, carrier, quantity):
-    # Retrieve leads from database
-    leads = db[carrier].find({'uploaded_by': user_id}).limit(quantity)
-    
-    # Create a text file with the leads
-    file_content = '\n'.join([lead['phone_number'] for lead in leads])
-    file_name = f"{carrier}_{quantity}.txt"
-    
-    # Send the file to the user
-    bot.send_document(user_id, file_name, file_content)
-
-
-def schedule_payment_status_check(payment_id, api_key, interval_minutes):
-    schedule.every(interval_minutes).minutes.do(check_and_update_payment_status, payment_id, api_key)
-    
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-        
-        user_id = payment_id
-        payment_status = check_payment_status(user_id)
-        if payment_status:
-            user_data = subscribers.find_one({'subscriber_id': user_id})
-            carrier = user_data['carrier']
-            quantity = user_data['quantity']
-            
-            deliver_leads(user_id, carrier, quantity)
 
 if __name__=='__main__':
     while True:

@@ -1,16 +1,13 @@
-# payment_utils.py
 from pymongo import MongoClient
-from datetime import datetime
 import os
 import certifi
 from dotenv import load_dotenv
 
 load_dotenv()
 SUPER_ADMIN_ID = int(os.getenv('SUPER_ADMIN'))
-print("SUPER_ADMIN_ID:", SUPER_ADMIN_ID)
 
 MONGO_URI = os.getenv('MONGO_URI')
-print(MONGO_URI)
+
 
 client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
 db = client['telegram_leads_bot']

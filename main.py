@@ -41,9 +41,9 @@ def send_welcome(message):
             full_name=f"{message.from_user.first_name} {message.from_user.last_name or ''}".strip()
         )
     else:
-        # Update their role if necessary
+
         if user_role == 'subscriber':
-            user_role = get_user_role(message.chat.id)  # Re-check role
+            user_role = get_user_role(message.chat.id) 
 
     markup = ReplyKeyboardMarkup(row_width=3, resize_keyboard=True)
 
@@ -95,7 +95,7 @@ def add_admin_handler(message):
 
 @bot.message_handler(func=lambda message: message.text.isdigit() and get_user_role(message.chat.id) == 'super_admin')
 def handle_new_admin_id(message):
-    # Check if the message is a command or button action like "Back", "Delete Admin", or "Show All Admins"
+
     if message.text in ["Back", "Delete Admin", "Show All Admins"]:
         bot.send_message(message.chat.id, "Operation canceled.")
         if message.text == "Back":
@@ -106,7 +106,6 @@ def handle_new_admin_id(message):
             show_admins_handler(message)
         return
     
-    # Ensure the input is a valid integer
     if not message.text.isdigit():
         bot.send_message(message.chat.id, "Invalid input. Please provide a valid chat ID (a numeric value) or press 'Back' to cancel.")
         bot.register_next_step_handler(message, handle_new_admin_id)
@@ -121,12 +120,10 @@ def handle_new_admin_id(message):
         username = user_info.username if user_info.username else "No username"
         full_name = f"{user_info.first_name} {user_info.last_name}" if user_info.last_name else user_info.first_name
 
-        # Check if the admin already exists
         if admins.find_one({"admin_id": chat_id}):
             bot.send_message(message.chat.id, f"{full_name} with chat ID {chat_id} is already an admin.")
             return
         
-        # Add the new admin since they do not exist
         add_admin(chat_id, username, full_name, message.chat.id)
         subscribers.update_one(
             {'subscriber_id': chat_id}, 
@@ -141,14 +138,12 @@ def handle_new_admin_id(message):
 
 @bot.message_handler(func=lambda message: message.text == "Delete Admin" and get_user_role(message.chat.id) == 'super_admin')
 def delete_admin_handler(message):
-    # Fetch all admins and create an inline keyboard
     admins = get_all_admins()
     markup = InlineKeyboardMarkup()
 
     for admin in admins:
         admin_id = admin['admin_id']
         full_name = admin['full_name']
-        # Add a button for each admin to delete
         markup.add(InlineKeyboardButton(full_name, callback_data=f"delete_admin_{admin_id}"))
 
     if not admins:
@@ -158,7 +153,7 @@ def delete_admin_handler(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('delete_admin_'))
 def handle_delete_admin_callback(call):
-    admin_id = int(call.data.split('_')[2])  # Extract admin ID from the callback data
+    admin_id = int(call.data.split('_')[2])
     try:
         # Delete the admin
         delete_admin(admin_id)
@@ -221,7 +216,6 @@ user_selected_carriers = {}
 def handle_location_selection(message):
     location = message.text.lower().replace(' ', '_')
     
-    # Store the selected carrier for the user
     user_selected_carriers[message.chat.id] = location
     
     if message.chat.id == int(SUPER_ADMIN_ID):
@@ -249,7 +243,6 @@ def handle_quantity_selection(call):
     description = f"Purchase {call.data.replace('_', ' ')}"
     payment_id, pay_address, pay_amount = create_payment(price_amount=amount, price_currency="usd", order_description=description)
 
-    # Get user details
     user = subscribers.find_one({'subscriber_id': call.message.chat.id})
     if user:
         username = user.get('username', 'unknown')
@@ -274,7 +267,6 @@ def handle_quantity_selection(call):
                 parse_mode='Markdown'
             )
             
-            # Call the new check_payment_status function in a new thread
             thread = threading.Thread(target=check_payment_status, args=(payment_id,))
             thread.start()
         else:
@@ -313,16 +305,13 @@ def handle_file_upload(message):
     else:
         bot.send_message(message.chat.id, "You do not have permission to upload leads.")
 
-# Process and store phone numbers in the database
 def process_and_store_numbers(file_content, user_id):
-    # Get the carrier location selected by the user
     carrier = user_selected_carriers.get(user_id)
     
     if not carrier:
         bot.send_message(user_id, "Carrier selection not found. Please select a carrier first.")
         return
 
-    # Split content by new lines
     phone_numbers = file_content.splitlines()
 
     valid_numbers = []
@@ -355,14 +344,12 @@ def process_and_store_numbers(file_content, user_id):
 def send_leads_file_to_user(user_id, file_path):
     with open(file_path, 'rb') as file:
         bot.send_document(user_id, file)
-    os.remove(file_path)  # Clean up the file after sending
+    os.remove(file_path) 
 
-# This is called after payment is confirmed inside check_payment_status
+
 def handle_confirmed_payment(payment_id):
-    # Fetch payment details
     payment = get_payment_by_id(payment_id)
     if payment and payment['status'] == "confirmed":
-        # Send the leads file to the user
         leads_file_path = f"{payment['username']}_leads_{payment['order_description'].split()[1]}_{payment['order_description'].split()[2]}.txt"
         send_leads_file_to_user(payment['user_id'], leads_file_path)
 

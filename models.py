@@ -1,33 +1,16 @@
-from pymongo import MongoClient
-import os
-import certifi
 from datetime import datetime
 from dotenv import load_dotenv
 from api_payment import NOWPAYMENTS_API_KEY
 from payment_utils import MONGO_URI, db
 
 load_dotenv()
-# MONGO_URI = os.environ.get('MONGO_URI')
-
-# client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
-# db = client['telegram_leads_bot']
 
 admins = db['admins']
 subscribers = db['subscribers']
 payments = db['payments']
 
 
-# carrier_collections = {
-#     'bell_bc': db['bell_bc'],
-#     'bell_ontario': db['bell_ontario'],
-#     'bell_alberta': db['bell_alberta'],
-#     'telus_bc': db['telsus_bc'],
-#     'telus_ontario': db['telsus_ontario'],
-#     'telus_alberta': db['telsus_alberta'],
-#     'rogers_bc': db['rogers_bc'],
-#     'rogers_ontario': db['rogers_ontario'],
-#     'rogers_alberta': db['rogers_alberta']
-# }
+
 
 def add_admin(admin_id, username, full_name, added_by):
     if admins.find_one({"admin_id": admin_id}):

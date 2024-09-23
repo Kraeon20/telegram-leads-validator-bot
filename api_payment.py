@@ -3,14 +3,15 @@ import json
 import requests
 from dotenv import load_dotenv
 import time
-from payment_utils import mark_leads_as_sold, get_payment_by_id, update_payment_status  # Import from new file
+from payment_utils import mark_leads_as_sold, get_payment_by_id, update_payment_status
 import os
-
+from uuid import UUID
 
 load_dotenv()
 NOWPAYMENTS_API_KEY = os.getenv('NOWPAYMENTS_API_KEY')
+order_id = order_id = f"order-{int(time.time())}"
 
-# Function to create an invoice using NowPayments
+
 def create_payment(price_amount, price_currency, order_description):
     url = 'https://api.nowpayments.io/v1/payment'
     headers = {
@@ -23,7 +24,7 @@ def create_payment(price_amount, price_currency, order_description):
         "price_currency": price_currency,
         "pay_currency": "btc",
         "order_description": order_description,
-        "order_id": "order-123456"
+        "order_id": order_id
     }
 
     response = requests.post(url, headers=headers, data=json.dumps(data))
@@ -64,30 +65,25 @@ def check_payment_status(payment_id):
             print(f"Payment ID: {payment_id} - Status: {payment_status}")
 
             if payment_status == "confirmed":
-                # Payment confirmed, retrieve order and lead details
                 payment = get_payment_by_id(payment_id)
                 if payment:
                     order_description = payment['order_description']
                     location, quantity = order_description.split()[1:3]  # e.g., "bell_bc 10k"
-                    quantity = int(quantity.replace("k", "000"))  # Convert to number of leads
+                    quantity = int(quantity.replace("k", "000"))
 
-                    # Reserve the leads
                     leads = mark_leads_as_sold(location, quantity)
                     
-                    # Create a text file with the reserved leads
                     leads_file_path = f"{payment['username']}_leads_{location}_{quantity}.txt"
                     with open(leads_file_path, "w") as file:
                         for lead in leads:
-                            file.write(f"{lead['phone_number']}\n")  # Assuming `phone_number` is in the collection
+                            file.write(f"{lead['phone_number']}\n")
                     
-                    # Notify the user with the leads file (this is handled in `main.py` below)
                     print(f"Leads reserved and saved in {leads_file_path}")
                 
-                # Update payment status to 'confirmed'
                 update_payment_status(payment_id, "confirmed")
                 break
 
-            time.sleep(2)  # Check every 2 seconds
+            time.sleep(10) 
         else:
             print(f"Failed to get payment status for Payment ID: {payment_id}. Error: {response.text}")
             break

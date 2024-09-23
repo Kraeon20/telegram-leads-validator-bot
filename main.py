@@ -2,16 +2,16 @@ import telebot
 import os
 import re
 import time
-import schedule
+import threading
 from dotenv import load_dotenv
 from models import subscribers
-from api_payment import create_invoice
+from api_payment import create_payment, check_payment_status
 from datetime import datetime, timezone
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from models import (SUPER_ADMIN_ID, db, admins, 
                     add_admin, add_subscribers, 
                     get_all_admins, 
-                    delete_admin, save_payment, continuously_check_payment_status)
+                    delete_admin, save_payment)
 
 
 load_dotenv()
@@ -246,7 +246,7 @@ def handle_quantity_selection(call):
         amount = 35
 
     description = f"Purchase {call.data.replace('_', ' ')}"
-    payment_id, invoice_url = create_invoice(price_amount=amount, price_currency="usd", order_description=description)
+    payment_id, pay_address, pay_amount = create_payment(price_amount=amount, price_currency="usd", order_description=description)
 
     # Get user details
     user = subscribers.find_one({'subscriber_id': call.message.chat.id})
@@ -254,26 +254,32 @@ def handle_quantity_selection(call):
         username = user.get('username', 'unknown')
         full_name = user.get('full_name', 'unknown')
         
-        if invoice_url:
+        if pay_address:
             save_payment(
                 user_id=call.message.chat.id,
                 username=username,
                 full_name=full_name,
                 amount=amount,
                 status="waiting",  
-                payment_id=payment_id,  # Use the payment ID from the API
+                payment_id=payment_id,
                 order_description=description,
                 price_currency="usd",
                 pay_currency="usd"
             )
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("Complete Payment", url=invoice_url))
-            bot.send_message(call.message.chat.id, "Click the button below to complete your payment:", reply_markup=markup)
-            continuously_check_payment_status(payment_id)  # Pass the payment ID to the function
+            
+            bot.send_message(
+                call.message.chat.id, 
+                f"Your Payment ID is: {payment_id}\nPlease send {pay_amount} BTC to the following address:\n\n`{pay_address}`",
+                parse_mode='Markdown'
+            )
+            # Call the new check_payment_status function
+            thread = threading.Thread(target=check_payment_status, args=(payment_id,))
+            thread.start()
         else:
             bot.send_message(call.message.chat.id, "Failed to create payment. Please try again later.")
     else:
         bot.send_message(call.message.chat.id, "User not found.")
+
 
 
 @bot.callback_query_handler(func=lambda call: 'custom' in call.data)
@@ -343,6 +349,7 @@ def process_and_store_numbers(file_content, user_id):
             bot.send_message(user_id, "No valid phone numbers found in the file.")
     else:
         bot.send_message(user_id, "No valid phone numbers found in the file.")
+
 
 
 if __name__=='__main__':

@@ -3,6 +3,9 @@ import json
 import requests
 from dotenv import load_dotenv
 import time
+from payment_utils import mark_leads_as_sold, get_payment_by_id, update_payment_status  # Import from new file
+import os
+
 
 load_dotenv()
 NOWPAYMENTS_API_KEY = os.getenv('NOWPAYMENTS_API_KEY')
@@ -31,7 +34,7 @@ def create_payment(price_amount, price_currency, order_description):
             payment_id = response_data.get('payment_id')
             pay_address = response_data.get('pay_address')
             pay_amount = response_data.get('pay_amount')
-
+            payment_status = response_data.get('status')
 
             print(response_data)
             if payment_id and pay_address and pay_amount:
@@ -61,11 +64,29 @@ def check_payment_status(payment_id):
             print(f"Payment ID: {payment_id} - Status: {payment_status}")
 
             if payment_status == "confirmed":
-                # You can send a message to the user here
-                print("Payment confirmed")
+                # Payment confirmed, retrieve order and lead details
+                payment = get_payment_by_id(payment_id)
+                if payment:
+                    order_description = payment['order_description']
+                    location, quantity = order_description.split()[1:3]  # e.g., "bell_bc 10k"
+                    quantity = int(quantity.replace("k", "000"))  # Convert to number of leads
+
+                    # Reserve the leads
+                    leads = mark_leads_as_sold(location, quantity)
+                    
+                    # Create a text file with the reserved leads
+                    leads_file_path = f"{payment['username']}_leads_{location}_{quantity}.txt"
+                    with open(leads_file_path, "w") as file:
+                        for lead in leads:
+                            file.write(f"{lead['phone_number']}\n")  # Assuming `phone_number` is in the collection
+                    
+                    # Notify the user with the leads file (this is handled in `main.py` below)
+                    print(f"Leads reserved and saved in {leads_file_path}")
+                
+                # Update payment status to 'confirmed'
+                update_payment_status(payment_id, "confirmed")
                 break
-            
-            # Add a delay before the next check
+
             time.sleep(2)  # Check every 2 seconds
         else:
             print(f"Failed to get payment status for Payment ID: {payment_id}. Error: {response.text}")

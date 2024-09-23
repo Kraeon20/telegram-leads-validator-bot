@@ -8,10 +8,11 @@ from models import subscribers
 from api_payment import create_payment, check_payment_status
 from datetime import datetime, timezone
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from models import (SUPER_ADMIN_ID, db, admins, 
+from models import (admins, 
                     add_admin, add_subscribers, 
-                    get_all_admins, 
-                    delete_admin, save_payment)
+                    get_all_admins,delete_admin, 
+                    save_payment)
+from payment_utils import SUPER_ADMIN_ID, db, get_payment_by_id
 
 
 load_dotenv()
@@ -272,15 +273,14 @@ def handle_quantity_selection(call):
                 f"Your Payment ID is: {payment_id}\nPlease send {pay_amount} BTC to the following address:\n\n`{pay_address}`",
                 parse_mode='Markdown'
             )
-            # Call the new check_payment_status function
+            
+            # Call the new check_payment_status function in a new thread
             thread = threading.Thread(target=check_payment_status, args=(payment_id,))
             thread.start()
         else:
             bot.send_message(call.message.chat.id, "Failed to create payment. Please try again later.")
     else:
         bot.send_message(call.message.chat.id, "User not found.")
-
-
 
 @bot.callback_query_handler(func=lambda call: 'custom' in call.data)
 def handle_custom_order(call):
@@ -333,11 +333,11 @@ def process_and_store_numbers(file_content, user_id):
 
     if valid_numbers:
         bulk_insert_data = [
-            {
-                'phone_number': number,
+            {   'uploaded_at': datetime.now(timezone.utc), 
                 'uploaded_by': user_id,
-                'uploaded_at': datetime.now(timezone.utc), 
-                'carrier': carrier.replace('_', ' ').title()
+                'phone_number': number,
+                'carrier': carrier.replace('_', ' ').title(),
+                'sold': False
             }
             for number in valid_numbers
         ]
@@ -349,6 +349,23 @@ def process_and_store_numbers(file_content, user_id):
             bot.send_message(user_id, "No valid phone numbers found in the file.")
     else:
         bot.send_message(user_id, "No valid phone numbers found in the file.")
+
+
+
+def send_leads_file_to_user(user_id, file_path):
+    with open(file_path, 'rb') as file:
+        bot.send_document(user_id, file)
+    os.remove(file_path)  # Clean up the file after sending
+
+# This is called after payment is confirmed inside check_payment_status
+def handle_confirmed_payment(payment_id):
+    # Fetch payment details
+    payment = get_payment_by_id(payment_id)
+    if payment and payment['status'] == "confirmed":
+        # Send the leads file to the user
+        leads_file_path = f"{payment['username']}_leads_{payment['order_description'].split()[1]}_{payment['order_description'].split()[2]}.txt"
+        send_leads_file_to_user(payment['user_id'], leads_file_path)
+
 
 
 

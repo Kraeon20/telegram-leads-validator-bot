@@ -16,9 +16,8 @@ from payment_utils import SUPER_ADMIN_ID, db, get_payment_by_id
 
 
 load_dotenv()
-API_TOKEN = os.getenv('TELEGRAM_BOT_API_TOKEN')
+API_TOKEN = os.environ.get('TELEGRAM_BOT_API_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
-
 def get_user_role(user_id):
     if user_id == SUPER_ADMIN_ID:
         return 'super_admin'
@@ -241,8 +240,9 @@ def handle_quantity_selection(call):
         amount = 35
 
     description = f"Purchase {call.data.replace('_', ' ')}"
-    payment_id, pay_address, pay_amount = create_payment(price_amount=amount, price_currency="usd", order_description=description)
+    payment_id, pay_address, pay_amount, payment_status = create_payment(price_amount=amount, price_currency="usd", order_description=description)
 
+    # Get user details
     user = subscribers.find_one({'subscriber_id': call.message.chat.id})
     if user:
         username = user.get('username', 'unknown')
@@ -254,7 +254,7 @@ def handle_quantity_selection(call):
                 username=username,
                 full_name=full_name,
                 amount=amount,
-                status="waiting",  
+                status=payment_status,
                 payment_id=payment_id,
                 order_description=description,
                 price_currency="usd",
@@ -267,6 +267,7 @@ def handle_quantity_selection(call):
                 parse_mode='Markdown'
             )
             
+            # Call the new check_payment_status function in a new thread
             thread = threading.Thread(target=check_payment_status, args=(payment_id,))
             thread.start()
         else:
@@ -274,6 +275,7 @@ def handle_quantity_selection(call):
     else:
         bot.send_message(call.message.chat.id, "User not found.")
 
+        
 @bot.callback_query_handler(func=lambda call: 'custom' in call.data)
 def handle_custom_order(call):
     bot.send_message(call.message.chat.id, "For orders of 50k+, please contact us directly for a custom order.")
